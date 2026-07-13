@@ -29,7 +29,6 @@ import com.tencent.kuikly.compose.foundation.layout.Box
 import com.tencent.kuikly.compose.foundation.layout.Column
 import com.tencent.kuikly.compose.foundation.layout.ExperimentalLayoutApi
 import com.tencent.kuikly.compose.foundation.layout.FlowRow
-import com.tencent.kuikly.compose.foundation.layout.Row
 import com.tencent.kuikly.compose.foundation.layout.Spacer
 import com.tencent.kuikly.compose.foundation.layout.fillMaxSize
 import com.tencent.kuikly.compose.foundation.layout.fillMaxWidth
@@ -38,7 +37,6 @@ import com.tencent.kuikly.compose.foundation.layout.heightIn
 import com.tencent.kuikly.compose.foundation.layout.padding
 import com.tencent.kuikly.compose.foundation.text.BasicTextField
 import com.tencent.kuikly.compose.material3.Text
-import com.tencent.kuikly.compose.ui.Alignment
 import com.tencent.kuikly.compose.ui.Modifier
 import com.tencent.kuikly.compose.ui.graphics.Color
 import com.tencent.kuikly.compose.ui.graphics.SolidColor
@@ -79,11 +77,10 @@ private val MentionHighlightColor = Color(0xFF5B7FB5)
 
 /** 已知候选名单：name -> userId */
 private val KNOWN_MENTIONS = listOf(
-    "Tom" to "u_tom",
     "张三" to "u_zhangsan",
     "李四" to "u_lisi",
     "王五" to "u_wangwu",
-    "赵六" to "u_zhaoliu",
+    "Tom" to "u_tom",
 )
 
 /**
@@ -195,8 +192,6 @@ private fun MentionPublisherScreen() {
     var editorValue by remember { mutableStateOf(TextFieldValue("")) }
     var mentions by remember { mutableStateOf(listOf<Mention>()) }
     var deleteState by remember { mutableStateOf<DeleteState>(DeleteState.Normal) }
-    // 诊断：每次 onValueChange 记录 first-delete 检查的子条件，便于排查拦截为何未触发
-    var firstDeleteTrace by remember { mutableStateOf("n/a") }
 
     fun handleValueChange(newValue: TextFieldValue) {
         val oldValue = editorValue
@@ -204,7 +199,6 @@ private fun MentionPublisherScreen() {
         val selectedMention = (deleteState as? DeleteState.MentionSelected)?.mention
         val inComposition = oldValue.composition != null || newValue.composition != null
         val isDeleteAction = newValue.text.length < oldValue.text.length
-        val isSingleCharDelete = newValue.text.length == oldValue.text.length - 1
 
         // 中文输入法组合态：不做 mention 删除判定，直接透传 + 重扫
         if (inComposition) {
@@ -224,7 +218,6 @@ private fun MentionPublisherScreen() {
             findMentionByRange(oldMentions, newValue.selection)
         } else null
         if (wordSelectHit != null) {
-            firstDeleteTrace = "B word-select newSel=${newValue.selection} hit=${wordSelectHit.displayName}"
             editorValue = newValue
             mentions = scanMentions(newValue.text)
             deleteState = DeleteState.MentionSelected(wordSelectHit)
@@ -234,11 +227,6 @@ private fun MentionPublisherScreen() {
         val directHit = if (aboutToDeletePos >= 0) {
             oldMentions.lastOrNull { it.start <= aboutToDeletePos && aboutToDeletePos < it.end }
         } else null
-        firstDeleteTrace = if (aboutToDeletePos >= 0) {
-            "A collapsed=$collapsed isDel=$isDeleteAction start=$cursorStart aboutDel=$aboutToDeletePos hit=${directHit?.displayName ?: "null"}"
-        } else {
-            "skip collapsed=$collapsed isDel=$isDeleteAction start=$cursorStart newSel=${newValue.selection}"
-        }
         if (directHit != null) {
             editorValue = oldValue.copy(selection = TextRange(directHit.start, directHit.end))
             deleteState = DeleteState.MentionSelected(directHit)
@@ -272,17 +260,6 @@ private fun MentionPublisherScreen() {
         val token = "@$name "
         val newText = editorValue.text.substring(0, atPos) + token + editorValue.text.substring(cursor)
         val newCursor = atPos + token.length
-        editorValue = TextFieldValue(text = newText, selection = TextRange(newCursor))
-        mentions = scanMentions(newText)
-        deleteState = DeleteState.Normal
-    }
-
-    /** 插入按钮：在当前光标处插入 @昵称 （带尾空格）。 */
-    fun insertMention(name: String, userId: String) {
-        val cursor = editorValue.selection.end.coerceIn(0, editorValue.text.length)
-        val token = "@$name "
-        val newText = editorValue.text.substring(0, cursor) + token + editorValue.text.substring(cursor)
-        val newCursor = cursor + token.length
         editorValue = TextFieldValue(text = newText, selection = TextRange(newCursor))
         mentions = scanMentions(newText)
         deleteState = DeleteState.Normal
@@ -353,27 +330,6 @@ private fun MentionPublisherScreen() {
 
         Spacer(Modifier.height(12.dp))
 
-        // 插入按钮
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "插入@张三",
-                modifier = Modifier
-                    .clickable { insertMention("张三", "u_zhangsan") }
-                    .background(Color(0xFFE6F0FF))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            )
-            Text(
-                text = "插入@李四",
-                modifier = Modifier
-                    .clickable { insertMention("李四", "u_lisi") }
-                    .background(Color(0xFFE6F0FF))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            )
-        }
-
         Spacer(Modifier.height(16.dp))
 
         // 调试区
@@ -384,6 +340,5 @@ private fun MentionPublisherScreen() {
         Text("mentions = ${mentions.joinToString { "(${it.displayName},[${it.start},${it.end}])" }}")
         Text("trigger = ${triggerPos?.let { "@$it(q=\"$query\")" } ?: "none"}")
         Text("deleteState = ${deleteStateLabel(deleteState)}")
-        Text("firstDelete = $firstDeleteTrace")
     }
 }
