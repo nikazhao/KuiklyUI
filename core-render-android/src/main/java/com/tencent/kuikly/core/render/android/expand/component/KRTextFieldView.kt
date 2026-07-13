@@ -31,6 +31,7 @@ import android.text.SpannableString
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextWatcher
+import android.text.style.ForegroundColorSpan
 import android.text.style.ImageSpan
 import android.util.SizeF
 import android.util.TypedValue
@@ -64,6 +65,7 @@ import com.tencent.kuikly.core.render.android.expand.module.KRKeyboardModule
 import com.tencent.kuikly.core.render.android.expand.module.KeyboardStatusListener
 import com.tencent.kuikly.core.render.android.export.IKuiklyRenderViewExport
 import com.tencent.kuikly.core.render.android.export.KuiklyRenderCallback
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -230,6 +232,10 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
             KRTextProps.PROP_KEY_LINE_HEIGHT -> setLineHeight(propValue)
             AUTO_HIDE_KEYBOARD_ON_IME_ACTION -> {
                 autoHideKeyboardOnImeAction = (propValue as Int == TYPE_ENABLE_HIDE_KEYBOARD)
+                true
+            }
+            MENTION_SPANS -> {
+                setMentionSpans(propValue.toString())
                 true
             }
             else -> super.setProp(propKey, propValue)
@@ -670,6 +676,52 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
         setSelection(index.coerceIn(0, text?.length ?: 0))
     }
 
+    /**
+     * Mention 高亮区间数据：List<(start, end, colorArgb)>。为 null 表示无 mention 高亮。
+     * 由 Compose 侧 setProp("mentionSpans", json) 下发，在 setTextInputState 重建文本后重打。
+     */
+    private var mentionSpansData: List<Triple<Int, Int, Int>>? = null
+
+    private fun setMentionSpans(json: String) {
+        mentionSpansData = parseMentionSpans(json)
+        applyMentionSpans()
+    }
+
+    private fun parseMentionSpans(json: String): List<Triple<Int, Int, Int>>? {
+        if (json.isEmpty() || json == "[]") return null
+        return runCatching {
+            val arr = JSONArray(json)
+            val result = ArrayList<Triple<Int, Int, Int>>(arr.length())
+            for (i in 0 until arr.length()) {
+                val item = arr.getJSONArray(i)
+                result.add(Triple(item.getInt(0), item.getInt(1), item.getInt(2)))
+            }
+            result
+        }.getOrNull()
+    }
+
+    /**
+     * 按 mentionSpansData 给当前 editableText 打/清 MentionColorSpan。
+     * - 先清除旧 MentionColorSpan，避免残留或区间错位；
+     * - data 为空时仅做清除，保证无 mention 的输入框零影响。
+     */
+    private fun applyMentionSpans() {
+        val editable = editableText ?: return
+        val oldSpans = editable.getSpans(0, editable.length, MentionColorSpan::class.java)
+        for (span in oldSpans) {
+            editable.removeSpan(span)
+        }
+        val data = mentionSpansData ?: return
+        for ((start, end, color) in data) {
+            if (start >= 0 && end >= start && end <= editable.length) {
+                editable.setSpan(MentionColorSpan(color), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+    }
+
+    /** ForegroundColorSpan 的标记子类，便于重打时只清理 mention 的高亮 span，不误伤其它 span。 */
+    private class MentionColorSpan(color: Int) : ForegroundColorSpan(color)
+
     private fun setTextInputState(params: String?) {
         val json = runCatching { JSONObject(params ?: "{}") }.getOrElse { JSONObject() }
         val rawText = json.optString(KEY_TEXT, "")
@@ -697,6 +749,7 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
             val actualStart = selectionStart.coerceIn(0, actualLength)
             val actualEnd = selectionEnd.coerceIn(0, actualLength)
             setSelection(actualStart, actualEnd)
+            applyMentionSpans()
         } finally {
             isSettingTextInputState = false
         }
@@ -1085,6 +1138,7 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
         private const val IME_NO_FULLSCREEN = "imeNoFullscreen"
         private const val AUTO_HIDE_KEYBOARD_ON_IME_ACTION = "autoHideKeyboardOnImeAction"
         private const val SELECTION_COLOR = "selectionColor"
+        private const val MENTION_SPANS = "mentionSpans"
 
         private const val METHOD_SET_TEXT = "setText"
         private const val METHOD_FOCUS = "focus"
