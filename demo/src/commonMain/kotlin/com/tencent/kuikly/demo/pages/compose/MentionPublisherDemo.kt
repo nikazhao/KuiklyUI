@@ -170,9 +170,7 @@ private fun detectMentionTrigger(
         i--
     }
     if (i < 0 || text[i] != '@') return null
-    // @ 前必须是文本起点或空格
-    if (i > 0 && !text[i - 1].isWhitespace()) return null
-    // @ 落在已有 mention 内部则不触发
+    // @ 落在已有 mention 内部则不触发（避免对已完成的 @人 重复弹候选）
     if (mentions.any { it.start <= i && i < it.end }) return null
     return i
 }
@@ -210,9 +208,10 @@ private fun MentionPublisherScreen() {
             return
         }
 
-        // 第一次删 mention：光标态 + 单字删除 + 命中 mention 区间 → 改为选中整段，不删
-        if (oldValue.selection.collapsed && isSingleCharDelete) {
-            val hit = findMentionContainingOrEndingAt(oldMentions, oldValue.selection.start)
+        // 第一次删 mention：光标态 + 删除动作 + 待删字符（cursor-1）落在某个 mention 文本区间 [start,end) 内 → 改为选中整段，不删
+        if (oldValue.selection.collapsed && isDeleteAction && oldValue.selection.start > 0) {
+            val aboutToDeletePos = oldValue.selection.start - 1
+            val hit = oldMentions.lastOrNull { it.start <= aboutToDeletePos && aboutToDeletePos < it.end }
             if (hit != null) {
                 editorValue = oldValue.copy(selection = TextRange(hit.start, hit.end))
                 deleteState = DeleteState.MentionSelected(hit)
