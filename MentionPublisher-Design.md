@@ -76,6 +76,8 @@ data class Mention(
 
 ## 3. @人高亮方案（AnnotatedString）
 
+> ⚠️ 本节为最初方案，**已被 §6.1 证明在当前 Kuikly 不可行**（参数被接住但丢弃）。高亮收口路线见 §6.2 **方案 F** 与 `MentionPublisher-Highlight-Plan.md`，不要再按本节实现。
+
 ### 3.1 关键思路
 底层真实文本始终是普通字符串，**高亮只发生在显示层**：
 - 原始值：`editorValue.text`
@@ -284,12 +286,20 @@ demo/src/commonMain/kotlin/com/tencent/kuikly/demo/pages/compose/MentionPublishe
 |------|------|------|
 | **A. 双控件** | 上层 `BasicText` 渲染带高亮的展示版（`buildAnnotatedString` + `SpanStyle`），下层隐藏 `BasicTextField` 接收输入，自己桥接点击定位与光标同步 | 高亮能亮；需自实现点击→光标定位、光标同步，工程量约 1.5h+ |
 | **B. 推动框架补齐** | 向 Kuikly 框架侧提 issue / PR，让 `CoreTextField` 真正消费 `visualTransformation`（恢复被注释的 `visualText` 路径） | 最干净，但依赖框架排期，非验证页可控 |
-| **C. 用 `AnnotatedString` 直接当 `value`** | 把 `TextFieldValue.annotatedString` 直接设为带 `SpanStyle` 的版本（而非通过 VisualTransformation） | 待验证 Kuikly 是否在渲染 `annotatedString` 时消费 `spanStyles`；§3.1 原本假设底层是普通 String，此方案需改数据模型 |
+| **C. 用 `AnnotatedString` 直接当 `value`** | 把 `TextFieldValue.annotatedString` 直接设为带 `SpanStyle` 的版本（而非通过 VisualTransformation） | 已验证失败（2026-07-10 17:40 真机）：`BasicTextField` 渲染层不消费 `spanStyles`，`@人` 不变蓝 |
+| **F. AnnotatedString 原生桥接（选定）** | 在 `CoreTextField`/`KRTextFieldView` 间新增桥接：Compose 侧把 Mention 区间 `(start,end,color)` 透传，原生侧 `KRTextFieldView` 仿 `applyEmojiSpans` 打 `ForegroundColorSpan` | **正路**。复用 `BasicText` 已有的 `AnnotatedString→原生Span` 转换思路；原生 `KRRichTextBuilder.kt:196` 已支持 `ForegroundColorSpan`；导师点名要 `AnnotatedString`。详见 `MentionPublisher-Highlight-Plan.md` |
 
-**当前决定**：步骤3 暂不收口，代码留在分支 `feat/mention-publisher-demo`（visualTransformation 已写好但未生效）。明日先验证方案 C（成本最低），不行再走方案 A。
+**当前决定**：选定 **方案 F（AnnotatedString 原生桥接）** 作为高亮收口路线，取代原先的 A/B/C。方案 A（双控件叠加）虽临时跑通，但两层排版引擎对不齐（已踩 gravity / includeFontPadding / lineHeight 三处光标偏移），属脆弱 hack，作为 F 落地前的临时演示态保留，最终由 F 取代。详细落地步骤见 `MentionPublisher-Highlight-Plan.md`（Phase 0-7）。
 
 ### 6.3 已完成且不受影响的部分
 
 - **步骤1（骨架）**：`@Page` + `ComposeContainer` + `BasicTextField(TextFieldValue)` + 调试区 —— 编译通过、真机渲染正常。
 - **步骤2（Mention 数据模型 + 插入按钮）**：`Mention` data class + `insertMention`（光标处插 `@人 ` + 后移后续 mention + 光标移到空格后）—— 真机三场景全过（空文本插入 / 末尾追加 / 中间插入后移）。
 - **步骤4（两段式删除）**：依赖 `TextFieldValue.selection` 与 `onValueChange` 比对，**不依赖 VisualTransformation**，因此 §4 方案不受本风险影响，可独立推进。
+
+### 6.4 方案 A（双控件叠加）现状与弃用说明（2026-07-10）
+
+- 当前 `MentionPublisherDemo.kt`（工作树内）为方案 A 实现：上层 `BasicText` 彩色展示 + 下层透明 `BasicTextField` 真实输入与光标。
+- 两段式删除（§4）已在该实现上做通，调试区 `deleteState` / `hitMentionEnd` 正常。
+- 已知缺陷：多行文本光标偏移，已临时修三刀（`KRTextFieldView.resetDefaultStyle()` 改 `gravity=TOP`、关 `includeFontPadding`、去掉 lineHeight 双算法），但仍属权宜。
+- **弃用计划**：方案 F 落地后，删除方案 A 的双层结构，改为单层 `BasicTextField` + 原生 span 高亮（详见 `MentionPublisher-Highlight-Plan.md` Phase 6）。

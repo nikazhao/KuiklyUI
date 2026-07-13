@@ -888,7 +888,13 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
     private fun resetDefaultStyle() {
         setPadding(0, 0, 0, 0)
         background = null
-        gravity = Gravity.LEFT or Gravity.CENTER
+        // 改为 TOP 对齐，避免多行文本时与上层 BasicText 显示层错位（光标偏下）。
+        // CENTER 会把整段文本垂直居中，导致第二行起累积偏移越来越大。
+        gravity = Gravity.LEFT or Gravity.TOP
+        // 关闭 Android EditText 默认的字体上下 padding（用于显示音标 / 重音符号）。
+        // 与上层 BasicText 显示层在 16sp 中文下约 3-4px/行，5 行累积可达 15-20px，
+        // 必须关掉才能保证行块高度与上层一致。
+        includeFontPadding = false
     }
 
     private fun enableFocusInTouchMode() {
