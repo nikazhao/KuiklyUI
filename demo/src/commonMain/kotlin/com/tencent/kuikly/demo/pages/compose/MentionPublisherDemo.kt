@@ -191,6 +191,8 @@ private fun MentionPublisherScreen() {
     var editorValue by remember { mutableStateOf(TextFieldValue("")) }
     var mentions by remember { mutableStateOf(listOf<Mention>()) }
     var deleteState by remember { mutableStateOf<DeleteState>(DeleteState.Normal) }
+    // 诊断：每次 onValueChange 记录 first-delete 检查的子条件，便于排查拦截为何未触发
+    var firstDeleteTrace by remember { mutableStateOf("n/a") }
 
     fun handleValueChange(newValue: TextFieldValue) {
         val oldValue = editorValue
@@ -209,14 +211,19 @@ private fun MentionPublisherScreen() {
         }
 
         // 第一次删 mention：光标态 + 删除动作 + 待删字符（cursor-1）落在某个 mention 文本区间 [start,end) 内 → 改为选中整段，不删
-        if (oldValue.selection.collapsed && isDeleteAction && oldValue.selection.start > 0) {
-            val aboutToDeletePos = oldValue.selection.start - 1
+        val collapsed = oldValue.selection.collapsed
+        val cursorStart = oldValue.selection.start
+        if (collapsed && isDeleteAction && cursorStart > 0) {
+            val aboutToDeletePos = cursorStart - 1
             val hit = oldMentions.lastOrNull { it.start <= aboutToDeletePos && aboutToDeletePos < it.end }
+            firstDeleteTrace = "collapsed=$collapsed isDel=$isDeleteAction start=$cursorStart aboutDel=$aboutToDeletePos hit=${hit?.displayName ?: "null"}"
             if (hit != null) {
                 editorValue = oldValue.copy(selection = TextRange(hit.start, hit.end))
                 deleteState = DeleteState.MentionSelected(hit)
                 return
             }
+        } else {
+            firstDeleteTrace = "collapsed=$collapsed isDel=$isDeleteAction start=$cursorStart (skip: 条件不满足)"
         }
 
         // 第二次删 mention：选中态覆盖整段 + 确认删除 → 接受结果 + 重扫
@@ -358,5 +365,6 @@ private fun MentionPublisherScreen() {
         Text("mentions = ${mentions.joinToString { "(${it.displayName},[${it.start},${it.end}])" }}")
         Text("trigger = ${triggerPos?.let { "@$it(q=\"$query\")" } ?: "none"}")
         Text("deleteState = ${deleteStateLabel(deleteState)}")
+        Text("firstDelete = $firstDeleteTrace")
     }
 }
