@@ -18,11 +18,11 @@
 **做法**：使用的是 Compose DSL 的 `AnnotatedString`（来自 `androidx.compose.ui.text.AnnotatedString`，Kuikly 的 `BasicTextField` 已支持）。Demo 里按官方标准写法 `BasicTextField(value = editorValue.copy(annotatedString = displayText), onValueChange = ...)`，把 @人 的蓝色 `SpanStyle` 放进 `AnnotatedString`；框架再把它桥接到底层原生 `EditText` 的 `ForegroundColorSpan` 渲染成蓝色。这里 `BasicTextField` 是真正消费 `AnnotatedString` 上的样式区间（spanStyles），而不是自己另起一层叠放。
 
 **为什么选它**：
-- 这是与官方 Kotlin Compose `WeiboMentionDemo` 一致的写法——官方示例只需要换一个 import 就能直接复用，符合"UI 效果一样、使用代码也一样"的目标；
-- 高亮信息集中在 `AnnotatedString` 一处维护，不另起一套样式体系，后续接官方 demo 时改动最小。
+- 这是与你用官方 Kotlin Compose 写的 `WeiboMentionDemo` 一致的写法——你的示例基于标准 Compose API、只需换 import 即可直接复用，符合"UI 效果一样、使用代码也一样"的目标；
+- 高亮信息集中在 `AnnotatedString` 一处维护，不另起一套样式体系，后续接你的 `WeiboMentionDemo` 时改动最小。
 
 **为什么不选别的做法**：
-- 曾考虑过「上层 `BasicText` 高亮 + 下层透明 `BasicTextField` 输入」的双层叠放方案。它能跑，但等于绕开了官方写法、自己造了一层渲染，既偏离官方示例，也多维护一套叠放与对齐逻辑，长期是个负担，因此放弃。
+- 曾考虑过「上层 `BasicText` 高亮 + 下层透明 `BasicTextField` 输入」的双层叠放方案。它能跑，但等于绕开了官方 Compose 写法（BasicTextField + AnnotatedString）、自己造了一层渲染，既偏离你用官方 Compose 写的示例，也多维护一套叠放与对齐逻辑，长期是个负担，因此放弃。
 
 ### 方案 2：两段式删除在「原生 EditText 层拦截退格」
 
@@ -90,13 +90,13 @@
 - 新增 Robolectric 单元测试，覆盖两段式删除（JSON 解析、第一步选整段、第二步真删）与组合态守卫，共 11 个用例全部通过；
 - demo 模块编译通过。
 
-## 附：与官方 WeiboMentionDemo 的差异对照
+## 附：与你用官方 Compose 写的 WeiboMentionDemo 的差异对照
 
-官方 demo 是纯 Kotlin Compose（Android/iOS 原生 Compose UI）实现；我们的 MentionPublisher 跑在 Kuikly 的 Compose DSL 上，而 Kuikly 的 `BasicTextField` 底层桥接的是原生 `EditText`。这一架构差异导致下面几项与官方"实现位置"不同，但"用户看到的体验"保持对齐。
+你用官方 Kotlin Compose 写的 `WeiboMentionDemo` 是纯 Compose 实现；我们的 MentionPublisher 跑在 Kuikly 的 Compose DSL 上，而 Kuikly 的 `BasicTextField` 底层桥接的是原生 `EditText`。这一架构差异导致下面几项与你的示例"实现位置"不同，但"用户看到的体验"保持对齐。
 
-| 方案 | 是否纯 Compose | 是否与官方对齐 | 差异与原因 |
+| 方案 | 是否纯 Compose | 是否与你的示例对齐 | 差异与原因 |
 |------|--------------|--------------|-----------|
-| 高亮（AnnotatedString） | 是，Compose 层写 AnnotatedString | 对齐（使用层） | 都用 `BasicTextField(value = tfv.copy(annotatedString = displayText))` + `buildAnnotatedString { addStyle(蓝) }`。差异只在渲染底层：官方由 Compose 自己渲染；Kuikly 通过框架桥接把 span 打到原生 EditText 的 ForegroundColorSpan。这是 Kuikly 框架的渲染机制，最终高亮效果一致。 |
-| 两段式删除 | 否，落在原生 EditText 层（onKeyDown + InputConnection 拦截） | 效果对齐，实现层不对齐 | 官方在 `onValueChange` 里通过"不应用新文本"拦截（注释明确"不依赖 onKeyEvent"）；我们在原生层 `onKeyDown` 拦截。原因：Kuikly 底层是原生 EditText，桥接层对带 span 文本的 selectionChange / textInputStateChange 回调形状不可控，照搬官方 onValueChange 方案会偶发错乱，所以下沉到原生事件入口做拦截（事前拦下退格、改为选中整段）。 |
-| 组合态守卫（SPAN_COMPOSING） | 否，原生 EditText 层 | 官方没有这一项 | 官方是纯 Compose，组合态由框架自身处理，无需显式守卫。Kuikly 桥接原生 EditText 后，中文组词时退格会撞上两段式拦截，必须显式用 SPAN_COMPOSING 让路给输入法。这是 Kuikly 桥接架构下才需要的补充。 |
+| 高亮（AnnotatedString） | 是，Compose 层写 AnnotatedString | 对齐（使用层） | 都用 `BasicTextField(value = tfv.copy(annotatedString = displayText))` + `buildAnnotatedString { addStyle(蓝) }`。差异只在渲染底层：你的示例由 Compose 自己渲染；Kuikly 通过框架桥接把 span 打到原生 EditText 的 ForegroundColorSpan。这是 Kuikly 框架的渲染机制，最终高亮效果一致。 |
+| 两段式删除 | 否，落在原生 EditText 层（onKeyDown + InputConnection 拦截） | 效果对齐，实现层不对齐 | 你的示例在 `onValueChange` 里通过"不应用新文本"拦截（注释明确"不依赖 onKeyEvent"）；我们在原生层 `onKeyDown` 拦截。原因：Kuikly 底层是原生 EditText，桥接层对带 span 文本的 selectionChange / textInputStateChange 回调形状不可控，照搬你的示例的 onValueChange 方案会偶发错乱，所以下沉到原生事件入口做拦截（事前拦下退格、改为选中整段）。 |
+| 组合态守卫（SPAN_COMPOSING） | 否，原生 EditText 层 | 你的示例没有这一项 | 你的示例是纯 Compose，组合态由框架自身处理，无需显式守卫。Kuikly 桥接原生 EditText 后，中文组词时退格会撞上两段式拦截，必须显式用 SPAN_COMPOSING 让路给输入法。这是 Kuikly 桥接架构下才需要的补充。 |
 | 候选下拉 | 是，Compose 层（LazyColumn / DropdownMenuItem） | 对齐 | 都用正则扫描 mentions + 下拉选 @昵称 插入 `@昵称 `，交互一致。 |
