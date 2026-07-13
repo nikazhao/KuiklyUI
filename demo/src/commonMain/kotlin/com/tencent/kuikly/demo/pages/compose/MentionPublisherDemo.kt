@@ -77,6 +77,7 @@ private val MentionHighlightColor = Color(0xFF5B7FB5)
 
 /** 已知候选名单：name -> userId */
 private val KNOWN_MENTIONS = listOf(
+    "Tom" to "u_tom",
     "张三" to "u_zhangsan",
     "李四" to "u_lisi",
     "王五" to "u_wangwu",

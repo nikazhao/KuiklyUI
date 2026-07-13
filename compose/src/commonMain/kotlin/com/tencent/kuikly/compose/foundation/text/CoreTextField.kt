@@ -576,9 +576,10 @@ internal fun CoreTextField(
                             val shouldSyncToNative = !isProcessingNativeEvent ||
                                 !(lastSyncedTextInputState?.hasSameEditingState(incomingTextInputState) ?: false)
 
+                            // mention 高亮：每次 value 变化都下发区间（不依赖 shouldSyncToNative，
+                            // 因为原生发起的编辑也需要更新 mention span，否则 mentionSpansData 为 null、拦截不触发）
+                            getViewAttr().setProp("mentionSpans", buildMentionSpansJson(value.annotatedString))
                             if (shouldSyncToNative) {
-                                // mention 高亮：先下发区间，native 在 setTextInputState 重建文本后会用最新区间打 ForegroundColorSpan
-                                getViewAttr().setProp("mentionSpans", buildMentionSpansJson(value.annotatedString))
                                 setTextInputState(incomingTextInputState)
                                 lastSyncedTextInputState = incomingTextInputState
                             }

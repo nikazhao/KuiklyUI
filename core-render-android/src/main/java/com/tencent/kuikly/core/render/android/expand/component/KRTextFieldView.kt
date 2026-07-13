@@ -292,14 +292,17 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
      * 第二次按退格时选区已覆盖 mention，默认行为会删掉选区，不拦截。
      */
     private fun interceptMentionBackspace(): Boolean {
-        val data = mentionSpansData ?: return false
+        val data = mentionSpansData
         val selStart = selectionStart
         val selEnd = selectionEnd
+        android.util.Log.d("MentionBS", "intercept called: data=${data?.size ?: "null"} sel=[$selStart,$selEnd]")
+        if (data == null) return false
         if (selStart != selEnd) return false // 已有选区（第二次按），放行默认删除
         val cursor = selStart
         if (cursor <= 0) return false
         val aboutToDeletePos = cursor - 1
         val hit = data.lastOrNull { it.first <= aboutToDeletePos && aboutToDeletePos < it.second } ?: return false
+        android.util.Log.d("MentionBS", "intercept HIT: select [${hit.first},${hit.second}) cursor=$cursor")
         setSelection(hit.first, hit.second)
         return true
     }
@@ -733,6 +736,7 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
 
     private fun setMentionSpans(json: String) {
         mentionSpansData = parseMentionSpans(json)
+        android.util.Log.d("MentionBS", "setMentionSpans: ${mentionSpansData?.size ?: 0} spans, json=$json")
         applyMentionSpans()
     }
 
