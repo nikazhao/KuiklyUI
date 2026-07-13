@@ -210,20 +210,35 @@ private fun MentionPublisherScreen() {
             return
         }
 
-        // 第一次删 mention：光标态 + 删除动作 + 待删字符（cursor-1）落在某个 mention 文本区间 [start,end) 内 → 改为选中整段，不删
+        // 第一次删 mention：两条路径
+        //   路径 B（Android backspace 单词选择）：旧选区折叠、新选区恰好覆盖整个 mention（无文本变化）
+        //           → 接受选区、置 MentionSelected，等二次退格命中 second-delete 真删
+        //   路径 A（原生真删字）：待删字符落在 mention 内 → rollback 文本、改成选中整段
         val collapsed = oldValue.selection.collapsed
         val cursorStart = oldValue.selection.start
-        if (collapsed && isDeleteAction && cursorStart > 0) {
-            val aboutToDeletePos = cursorStart - 1
-            val hit = oldMentions.lastOrNull { it.start <= aboutToDeletePos && aboutToDeletePos < it.end }
-            firstDeleteTrace = "collapsed=$collapsed isDel=$isDeleteAction start=$cursorStart aboutDel=$aboutToDeletePos hit=${hit?.displayName ?: "null"}"
-            if (hit != null) {
-                editorValue = oldValue.copy(selection = TextRange(hit.start, hit.end))
-                deleteState = DeleteState.MentionSelected(hit)
-                return
-            }
+        val wordSelectHit = if (collapsed && !newValue.selection.collapsed) {
+            findMentionByRange(oldMentions, newValue.selection)
+        } else null
+        if (wordSelectHit != null) {
+            firstDeleteTrace = "B word-select newSel=${newValue.selection} hit=${wordSelectHit.displayName}"
+            editorValue = newValue
+            mentions = scanMentions(newValue.text)
+            deleteState = DeleteState.MentionSelected(wordSelectHit)
+            return
+        }
+        val aboutToDeletePos = if (collapsed && isDeleteAction && cursorStart > 0) cursorStart - 1 else -1
+        val directHit = if (aboutToDeletePos >= 0) {
+            oldMentions.lastOrNull { it.start <= aboutToDeletePos && aboutToDeletePos < it.end }
+        } else null
+        firstDeleteTrace = if (aboutToDeletePos >= 0) {
+            "A collapsed=$collapsed isDel=$isDeleteAction start=$cursorStart aboutDel=$aboutToDeletePos hit=${directHit?.displayName ?: "null"}"
         } else {
-            firstDeleteTrace = "collapsed=$collapsed isDel=$isDeleteAction start=$cursorStart (skip: 条件不满足)"
+            "skip collapsed=$collapsed isDel=$isDeleteAction start=$cursorStart newSel=${newValue.selection}"
+        }
+        if (directHit != null) {
+            editorValue = oldValue.copy(selection = TextRange(directHit.start, directHit.end))
+            deleteState = DeleteState.MentionSelected(directHit)
+            return
         }
 
         // 第二次删 mention：选中态覆盖整段 + 确认删除 → 接受结果 + 重扫
