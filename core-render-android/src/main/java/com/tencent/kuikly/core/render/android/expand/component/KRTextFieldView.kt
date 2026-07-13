@@ -36,7 +36,10 @@ import android.text.style.ImageSpan
 import android.util.SizeF
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.TextView
@@ -280,6 +283,52 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
             METHOD_SET_TEXT_INPUT_STATE -> setTextInputState(params)
             METHOD_GET_TEXT_INPUT_STATE -> getTextInputState(callback)
             else -> super.call(method, params, callback)
+        }
+    }
+
+    /**
+     * 两段式删除第一步：光标折叠 + 待删字符（cursor-1）落在某个 mention [start,end) 内
+     * → 把选区设到该 mention 整段、返回 true 消费退格事件（不删字）。
+     * 第二次按退格时选区已覆盖 mention，默认行为会删掉选区，不拦截。
+     */
+    private fun interceptMentionBackspace(): Boolean {
+        val data = mentionSpansData ?: return false
+        val selStart = selectionStart
+        val selEnd = selectionEnd
+        if (selStart != selEnd) return false // 已有选区（第二次按），放行默认删除
+        val cursor = selStart
+        if (cursor <= 0) return false
+        val aboutToDeletePos = cursor - 1
+        val hit = data.lastOrNull { it.first <= aboutToDeletePos && aboutToDeletePos < it.second } ?: return false
+        setSelection(hit.first, hit.second)
+        return true
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_DEL && event?.action == KeyEvent.ACTION_DOWN) {
+            if (interceptMentionBackspace()) return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
+        val base = super.onCreateInputConnection(outAttrs)
+        return MentionInputConnection(base)
+    }
+
+    /**
+     * 包装原生 InputConnection，拦截软键盘退格（deleteSurroundingText），
+     * 在 mention 边界先选区后删。其它事件透传给 base。
+     */
+    private inner class MentionInputConnection(base: InputConnection) : InputConnectionWrapper(base, false) {
+        override fun deleteSurroundingText(beforeChars: Int, afterChars: Int): Boolean {
+            if (beforeChars > 0 && interceptMentionBackspace()) return true
+            return super.deleteSurroundingText(beforeChars, afterChars)
+        }
+
+        override fun deleteSurroundingTextInCodePoints(beforeChars: Int, afterChars: Int): Boolean {
+            if (beforeChars > 0 && interceptMentionBackspace()) return true
+            return super.deleteSurroundingTextInCodePoints(beforeChars, afterChars)
         }
     }
 
