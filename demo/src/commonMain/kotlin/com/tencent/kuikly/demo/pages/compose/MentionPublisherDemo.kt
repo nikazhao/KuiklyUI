@@ -62,7 +62,7 @@ import com.tencent.kuikly.core.annotations.Page
  *
  * 数据模型对齐官方：mentions 每次 onValueChange 用 scanMentions 正则重扫，下标自动正确不漂移。
  */
-@Page("@")
+@Page("MentionPublisherDemo")
 class MentionPublisherDemo : ComposeContainer() {
     override fun willInit() {
         super.willInit()

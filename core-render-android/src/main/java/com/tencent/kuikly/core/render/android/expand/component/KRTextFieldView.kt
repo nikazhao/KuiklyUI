@@ -287,9 +287,56 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
     }
 
     /**
+     * 跨两次退格记住待删的 mention 区间。
+     * 根因：DEL1 setSelection 后 native 选区会被某种机制折叠成 [end,end]，
+     * 导致 DEL2 时 selectionStart == selectionEnd，看不到选区。
+     * 用 pending 字段记住第一次设的区间，DEL2 直接按 pending 删，不依赖选区持久。
+     * 任何文本改动（afterTextChanged）会清掉 pending，避免陈旧状态。
+     */
+    private var pendingMentionDelete: IntRange? = null
+
+    /**
+     * 两段式删除第二步：选区已覆盖某个 mention 或 pending 有值 → 删掉、返回 true 消费事件。
+     * 第一次退格由 interceptMentionBackspace 设选区+pending，第二次到这里删。
+     * 真机软键盘的退格走 deleteSurroundingText（不删选区），必须在 wrapper 里自己删。
+     */
+    private fun deleteMentionSelection(): Boolean {
+        val data = mentionSpansData ?: return false
+        val selStart = selectionStart
+        val selEnd = selectionEnd
+
+        // 路径 A：当前选区恰好覆盖某个 mention → 删选区
+        if (selStart != selEnd) {
+            val min = minOf(selStart, selEnd)
+            val max = maxOf(selStart, selEnd)
+            val mention = data.lastOrNull { it.first == min && it.second == max }
+            if (mention != null) {
+                android.util.Log.d("MentionBS", "delete via sel: [$min,$max)")
+                getEditableText()?.delete(min, max)
+                pendingMentionDelete = null
+                return true
+            }
+        }
+
+        // 路径 B：选区被折叠了，用 pending 删
+        val pending = pendingMentionDelete
+        if (pending != null) {
+            val mention = data.lastOrNull { it.first == pending.first && it.second == pending.last }
+            if (mention != null) {
+                android.util.Log.d("MentionBS", "delete via pending: [${pending.first},${pending.last})")
+                getEditableText()?.delete(pending.first, pending.last)
+                pendingMentionDelete = null
+                return true
+            }
+            // pending 不再匹配（mention 被改/删/重建）→ 清掉
+            pendingMentionDelete = null
+        }
+        return false
+    }
+
+    /**
      * 两段式删除第一步：光标折叠 + 待删字符（cursor-1）落在某个 mention [start,end) 内
-     * → 把选区设到该 mention 整段、返回 true 消费退格事件（不删字）。
-     * 第二次按退格时选区已覆盖 mention，默认行为会删掉选区，不拦截。
+     * → 把选区设到该 mention 整段 + 记下 pending 区间、返回 true 消费退格事件。
      */
     private fun interceptMentionBackspace(): Boolean {
         val data = mentionSpansData
@@ -302,13 +349,17 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
         if (cursor <= 0) return false
         val aboutToDeletePos = cursor - 1
         val hit = data.lastOrNull { it.first <= aboutToDeletePos && aboutToDeletePos < it.second } ?: return false
-        android.util.Log.d("MentionBS", "intercept HIT: select [${hit.first},${hit.second}) cursor=$cursor")
+        android.util.Log.d("MentionBS", "intercept HIT: setSelection(${hit.first},${hit.second}) cursor=$cursor")
         setSelection(hit.first, hit.second)
+        pendingMentionDelete = hit.first..hit.second
+        android.util.Log.d("MentionBS", "pending set to: [${hit.first},${hit.second})")
         return true
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_DEL && event?.action == KeyEvent.ACTION_DOWN) {
+            android.util.Log.d("MentionBS", "onKeyDown DEL: sel=[$selectionStart,$selectionEnd]")
+            if (deleteMentionSelection()) return true
             if (interceptMentionBackspace()) return true
         }
         return super.onKeyDown(keyCode, event)
@@ -325,12 +376,14 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
      */
     private inner class MentionInputConnection(base: InputConnection) : InputConnectionWrapper(base, false) {
         override fun deleteSurroundingText(beforeChars: Int, afterChars: Int): Boolean {
-            if (beforeChars > 0 && interceptMentionBackspace()) return true
+            if (deleteMentionSelection()) return true
+            if (selectionStart == selectionEnd && beforeChars > 0 && interceptMentionBackspace()) return true
             return super.deleteSurroundingText(beforeChars, afterChars)
         }
 
         override fun deleteSurroundingTextInCodePoints(beforeChars: Int, afterChars: Int): Boolean {
-            if (beforeChars > 0 && interceptMentionBackspace()) return true
+            if (deleteMentionSelection()) return true
+            if (selectionStart == selectionEnd && beforeChars > 0 && interceptMentionBackspace()) return true
             return super.deleteSurroundingTextInCodePoints(beforeChars, afterChars)
         }
     }
@@ -1145,6 +1198,8 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
                     if (isSettingTextInputState) {
                         return
                     }
+                    // 任何文本改动都让 pendingMentionDelete 失效（输入了别的字符、删了别的）
+                    pendingMentionDelete = null
                     s?.also(::ensureLineHeightSpan)
                     applyEmojiSpans(s)
                     textInputStateChangeCallback?.invoke(createTextInputStateParamMap())
