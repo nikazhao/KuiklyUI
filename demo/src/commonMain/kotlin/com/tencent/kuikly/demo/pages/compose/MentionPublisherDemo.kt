@@ -281,16 +281,17 @@ private fun MentionPublisherScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .padding(16.dp)
     ) {
         Text(
-            text = "发布器验证 (@人 · 单层原生span)",
-            fontSize = 20.sp,
+            text = "@人发布器",
+            fontSize = 18.sp,
         )
 
         Spacer(Modifier.height(12.dp))
 
-        // 单层输入框：高亮由原生 ForegroundColorSpan 渲染（框架桥接）
+        // 输入框
         Box(
             modifier = Modifier
                 .fillMaxWidth()
