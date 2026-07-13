@@ -57,6 +57,6 @@ proto/**/*.kt
 /.cursor/
 
 ## Local artifacts (debug screenshots, logs, tool dirs) — not deliverables
-/workbuddy/
+/.workbuddy/
 /BugFix/
 /wdblogs/
