@@ -27,6 +27,7 @@ import com.tencent.kuikly.compose.foundation.clickable
 import com.tencent.kuikly.compose.foundation.layout.Arrangement
 import com.tencent.kuikly.compose.foundation.layout.Box
 import com.tencent.kuikly.compose.foundation.layout.Column
+import com.tencent.kuikly.compose.foundation.layout.FlowRow
 import com.tencent.kuikly.compose.foundation.layout.Row
 import com.tencent.kuikly.compose.foundation.layout.Spacer
 import com.tencent.kuikly.compose.foundation.layout.fillMaxSize
@@ -330,9 +331,9 @@ private fun MentionPublisherScreen() {
         // @ 候选下拉
         if (triggerPos != null && candidates.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            Row(
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text("候选：", color = Color.Gray)
                 candidates.forEach { (name, uid) ->

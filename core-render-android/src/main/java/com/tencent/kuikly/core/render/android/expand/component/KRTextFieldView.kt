@@ -30,8 +30,9 @@ import android.text.Spannable
 import android.text.SpannableString
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.TextPaint
 import android.text.TextWatcher
-import android.text.style.ForegroundColorSpan
+import android.text.style.CharacterStyle
 import android.text.style.ImageSpan
 import android.util.SizeF
 import android.util.TypedValue
@@ -825,8 +826,16 @@ open class KRTextFieldView(context: Context, private val softInputMode: Int?) : 
         }
     }
 
-    /** ForegroundColorSpan 的标记子类，便于重打时只清理 mention 的高亮 span，不误伤其它 span。 */
-    private class MentionColorSpan(color: Int) : ForegroundColorSpan(color)
+    /**
+     * 高亮 span：继承 CharacterStyle（不继承 MetricAffectingSpan），
+     * 避免 Android StaticLayout 把 span 边界当作潜在断行点导致 @后普通文字另起一行。
+     * updateDrawState 仍设 textPaint.color 保持高亮效果。
+     */
+    private class MentionColorSpan(private val color: Int) : CharacterStyle() {
+        override fun updateDrawState(textPaint: TextPaint) {
+            textPaint.color = color
+        }
+    }
 
     private fun setTextInputState(params: String?) {
         val json = runCatching { JSONObject(params ?: "{}") }.getOrElse { JSONObject() }
