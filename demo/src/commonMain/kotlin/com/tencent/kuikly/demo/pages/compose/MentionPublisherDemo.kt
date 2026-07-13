@@ -281,8 +281,7 @@ private fun MentionPublisherScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .padding(16.dp)
+            .padding(top = 32.dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
     ) {
         Text(
             text = "@人发布器",
