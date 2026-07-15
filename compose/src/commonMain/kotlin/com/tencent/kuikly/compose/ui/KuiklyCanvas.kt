@@ -20,6 +20,7 @@ import com.tencent.kuikly.compose.ui.geometry.Rect
 import com.tencent.kuikly.compose.ui.geometry.RoundRect
 import com.tencent.kuikly.compose.ui.graphics.Canvas
 import com.tencent.kuikly.compose.ui.graphics.ClipOp
+import com.tencent.kuikly.compose.ui.graphics.DashPathEffect
 import com.tencent.kuikly.compose.ui.graphics.ImageBitmap
 import com.tencent.kuikly.compose.ui.graphics.LinearGradient
 import com.tencent.kuikly.compose.ui.graphics.Matrix
@@ -156,6 +157,13 @@ internal class KuiklyCanvas : Canvas {
 
     override fun drawLine(p1: Offset, p2: Offset, paint: Paint) {
         context?.apply {
+            // dash 参数下沉：px → dp/pt 换算后透传给 CanvasContext.setLineDash
+            val effect = paint.pathEffect
+            if (effect is DashPathEffect) {
+                setLineDash(effect.intervals.map { it / densityValue }.toList())
+            } else {
+                setLineDash(emptyList())  // 显式清空，防止上一帧残留
+            }
             beginPath()
             moveTo(p1.x / densityValue, p1.y / densityValue)
             lineTo(p2.x / densityValue, p2.y / densityValue)
