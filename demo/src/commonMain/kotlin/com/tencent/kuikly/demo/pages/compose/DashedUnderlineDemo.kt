@@ -9,10 +9,15 @@ import com.tencent.kuikly.compose.foundation.layout.padding
 import com.tencent.kuikly.compose.foundation.lazy.LazyColumn
 import com.tencent.kuikly.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.tencent.kuikly.compose.setContent
 import com.tencent.kuikly.compose.ui.Modifier
 import com.tencent.kuikly.compose.ui.draw.drawBehind
 import com.tencent.kuikly.compose.ui.geometry.Offset
+import com.tencent.kuikly.compose.ui.geometry.Rect
 import com.tencent.kuikly.compose.ui.graphics.Color
 import com.tencent.kuikly.compose.ui.graphics.PathEffect
 import com.tencent.kuikly.compose.ui.text.SpanStyle
@@ -30,10 +35,11 @@ import com.tencent.kuikly.core.annotations.Page
  * 官方原工程：/Users/zhaozining/CodeBuddy/20260615095947/DashedLineVerify/MainActivity.kt
  *
  * 对齐情况（对照 docs/DevGuide/kuikly-compose-drawBehind-pathEffect-Design.md）：
- * - 场景1 / 3 / 5：官方代码原样移植（仅 import androidx→com.tencent.kuikly），走 drawBehind+pathEffect 通道，1:1 对齐。
- * - 场景2 / 4：官方写法依赖 TextLayoutResult.getBoundingBox / getLineBottom / lineCount，
- *   这几个 API 在 Kuikly 的 TextLayoutResult.kt:421-531 仍是注释、MultiParagraph 是空壳（lineCount=0），
- *   官方代码粘进来编译不过 → 本页标注“未对齐”，待实现行度量 API 后再补。
+ * - 5 个场景官方代码原样移植（仅 import androidx→com.tencent.kuikly），全部走 drawBehind+pathEffect 通道。
+ * - 场景 1/3/5：drawBehind 整行/多形态虚线 + 实线对照，1:1 对齐。
+ * - 场景 2/4：依赖 TextLayoutResult.getBoundingBox / getLineBottom / lineCount，
+ *   已通过 native StaticLayout 行度量桥接（KRRichTextView.call lineMetrics/getBoundingBox）
+ *   回填到 MultiParagraph，官方写法可直接编译运行，1:1 对齐。
  */
 @Page("DashedUnderlineDemo")
 class DashedUnderlineDemo : ComposeContainer() {
@@ -65,7 +71,7 @@ class DashedUnderlineDemo : ComposeContainer() {
 
                 // ==================== 场景2：纯 Text + drawBehind 只画局部虚线 ====================
                 item {
-                    Text("场景2: 纯 Text 局部虚线（官方 1:1 未对齐 · 阻塞）", fontWeight = FontWeight.Medium)
+                    Text("场景2: 纯 Text 局部虚线（官方 1:1 对齐）", fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(4.dp))
                     DashedUnderline_Text_Span()
                     Spacer(Modifier.height(24.dp))
@@ -94,7 +100,7 @@ class DashedUnderlineDemo : ComposeContainer() {
 
                 // ==================== 场景4：多行折行文本逐行虚线 ====================
                 item {
-                    Text("场景4: 多行折行文本逐行虚线（官方 1:1 未对齐 · 阻塞）", fontWeight = FontWeight.Medium)
+                    Text("场景4: 多行折行文本逐行虚线（官方 1:1 对齐）", fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(4.dp))
                     DashedUnderline_Text_MultiLine()
                     Spacer(Modifier.height(24.dp))
@@ -138,57 +144,102 @@ fun DashedUnderline_Text() {
 }
 
 /**
- * 场景2：纯 Text + drawBehind 只在局部画虚线。
- *
- * 官方写法（Kuikly 编译不过 —— TextLayoutResult.getBoundingBox 未实现）：
- * ```
- * var spanRect by remember { mutableStateOf<Rect?>(null) }
- * Text(
- *     text = buildAnnotatedString { append(full.substring(0, spanStart)); append(...) },
- *     onTextLayout = { result ->
- *         val start = result.getBoundingBox(spanStart)      // ← Kuikly 注释态
- *         val end = result.getBoundingBox(spanEnd - 1)      // ← Kuikly 注释态
- *         spanRect = Rect(start.left, start.top, end.right, start.bottom)
- *     },
- *     modifier = Modifier.drawBehind { spanRect?.let { drawLine(... pathEffect=...) } }
- * )
- * ```
- * 阻塞根因：compose/.../ui/text/TextLayoutResult.kt:421-531 的 getBoundingBox/getLineBottom/
- * lineCount 全是注释，MultiParagraph 是空壳。要 1:1 对齐需先实现行度量 API（三端原生文本层桥接）。
- * 本页先用红字标出“预期加线范围”，不伪造虚线。
+ * 通用：把一段文字里 [spanStart, spanEnd) 这截高亮，并用 drawBehind 只在该截下方画虚线。
+ * 关键点：onTextLayout 拿到 span 的包围盒（Rect），drawBehind 只在包围盒内画线。
+ * 官方写法原样移植（仅换 import）。
  */
 @Composable
-fun DashedUnderline_Text_Span() {
-    Text("⚠️ Kuikly 未实现 TextLayoutResult.getBoundingBox，局部虚线暂不能 1:1 对齐官方。")
-    Spacer(Modifier.height(4.dp))
+private fun SpanDashedText(
+    full: String,
+    spanStart: Int,
+    spanEnd: Int,
+    color: Color,
+    usePathEffect: Boolean
+) {
+    var spanRect by remember { mutableStateOf<Rect?>(null) }
+
     Text(
-        buildAnnotatedString {
-            append("这是一段示例文字，")
-            withStyle(SpanStyle(color = Color.Red)) {
-                append("纯 Text")
+        text = buildAnnotatedString {
+            append(full.substring(0, spanStart))
+            append(full.substring(spanStart, spanEnd))
+            append(full.substring(spanEnd))
+        },
+        onTextLayout = { result ->
+            val start = result.getBoundingBox(spanStart)
+            val end = result.getBoundingBox(spanEnd - 1)
+            spanRect = Rect(start.left, start.top, end.right, start.bottom)
+        },
+        modifier = Modifier.drawBehind {
+            spanRect?.let { rect ->
+                val y = rect.bottom
+                val strokeWidth = 1.dp.toPx()
+                if (usePathEffect) {
+                    drawLine(
+                        color = color,
+                        start = Offset(rect.left, y),
+                        end = Offset(rect.right, y),
+                        strokeWidth = strokeWidth,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 4f), 0f)
+                    )
+                } else {
+                    val dashWidth = 8.dp.toPx()
+                    val gapWidth = 4.dp.toPx()
+                    var startX = rect.left
+                    while (startX < rect.right) {
+                        val endX = minOf(startX + dashWidth, rect.right)
+                        drawLine(
+                            color = color,
+                            start = Offset(startX, y),
+                            end = Offset(endX, y),
+                            strokeWidth = strokeWidth
+                        )
+                        startX += dashWidth + gapWidth
+                    }
+                }
             }
-            append(" 方案只在局部画虚线（红字 = 官方预期加虚线的 span 范围）")
         }
     )
 }
 
 /**
- * 场景4：多行折行文本逐行画虚线。
- *
- * 官方写法（Kuikly 编译不过 —— lineCount=0、getLineBottom 未实现）：
- * ```
- * var lineBottoms by remember { mutableStateOf<List<Float>>(emptyList()) }
- * Text(text = "...", onTextLayout = { result ->
- *     lineBottoms = (0 until result.lineCount).map { result.getLineBottom(it) }  // ← Kuikly 注释态
- * }, modifier = Modifier.drawBehind { lineBottoms.forEach { drawLine(... pathEffect=...) } })
- * ```
- * 阻塞根因同场景2。本页先展示文本本身，不伪造虚线。
+ * 场景2：纯 Text + drawBehind 最干净写法，只在局部画虚线（官方写法原样移植，仅换 import）。
+ */
+@Composable
+fun DashedUnderline_Text_Span() {
+    SpanDashedText(
+        full = "这是一段示例文字，纯 Text 方案只在局部画虚线",
+        spanStart = 9,
+        spanEnd = 11,
+        color = Color.Red,
+        usePathEffect = true
+    )
+}
+
+/**
+ * 场景4：多行折行文本的虚线。通过 onTextLayout 拿到每一行的底边坐标，
+ * 逐行用 drawBehind 画虚线（官方写法原样移植，仅换 import）。
  */
 @Composable
 fun DashedUnderline_Text_MultiLine() {
-    Text("⚠️ Kuikly 未实现 TextLayoutResult.getLineBottom/lineCount，多行逐行虚线暂不能 1:1 对齐官方。")
-    Spacer(Modifier.height(4.dp))
-    Text("这是一段会换行的长文本，用来验证多行文本时虚线下划线是否每行都正确画出，而不是只在最底部画一条横线。")
+    var lineBottoms by remember { mutableStateOf<List<Float>>(emptyList()) }
+    Text(
+        text = "这是一段会换行的长文本，用来验证多行文本时虚线下划线是否每行都正确画出，而不是只在最底部画一条横线。",
+        onTextLayout = { result ->
+            lineBottoms = (0 until result.lineCount).map { result.getLineBottom(it) }
+        },
+        modifier = Modifier.drawBehind {
+            val strokeWidth = 1.dp.toPx()
+            lineBottoms.forEach { y ->
+                drawLine(
+                    color = Color.Magenta,
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = strokeWidth,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 4f), 0f)
+                )
+            }
+        }
+    )
 }
 
 /**
