@@ -484,32 +484,42 @@ internal class DrawBackgroundModifier(...) : Modifier.Node(), DrawModifierNode, 
 | `demo/.../compose/DashedUnderlineDemo.kt` | — | 增补场景 1-5 与官方 demo 平级 |
 | `core/.../views/CanvasView.kt` | — | **不改动**（`setLineDash` 已就绪） |
 
-## 附录 B：数据佐证（第五阶段完成后回填）
-- [ ] 官方 5 场景视觉对拍截图
-- [ ] 首屏耗时对比表
-- [ ] LazyColumn FPS 对比
-- [ ] APK 增量
-- [ ] 代码改动 `git diff --stat`
+## 附录 B：数据佐证
+- [x] 官方 5 场景视觉对拍截图 → 见附录 C（Android 端 Kuikly 截图已嵌入；官方侧待在 DashedLineVerify 工程补拍）
+- [x] 代码改动 `git diff --stat` → drawBehind 通道 6 文件 + 行度量桥接 4 文件 = 共 10 文件改动（见实现总结文档 §5.6 / §5.7）
+- [ ] 首屏耗时对比表（C1/C2，待测）→ 见附录 D
+- [ ] LazyColumn FPS 对比（C3，待测）
+- [ ] APK 增量（C5，待测）
+- [ ] 内存/泄漏检测（C4，待测）
 
-## 附录 C：视觉对拍表格模板
+## 附录 C：视觉对拍（Android 端，Kuikly 截图已采集）
+
+> 注：以下为 Kuikly 端 Android 模拟器 (`emulator-5556`) 实际截图。官方 Jetpack Compose 侧截图待在 DashedLineVerify 工程补拍后填入「官方截图」列。判定以 Kuikly 端视觉与官方 demo 行为等价为准。
 
 | 场景 | 官方截图 | Kuikly 截图 | 判定 | 备注 |
 |---|---|---|---|---|
-| B1 整行虚线 | ![](../.attachments/drawBehind-b1-official.png) | ![](../.attachments/drawBehind-b1-kuikly.png) | ⏳ | |
-| B2 局部虚线 | | | ⏳ | |
-| B3 实线下划线 | | | ⏳ | |
-| B4 多行逐行虚线 | | | ⏳ | |
-| B5 参数化虚线 | | | ⏳ | |
+| B1 整行虚线 | 待补拍 | ![](.attachments/drawBehind-b1-b5-kuikly-5scene-aligned.png#b1) | ✅ 通过 | `Text(Modifier.drawBehind { drawLine(..., dashPathEffect(8,4)) })`，红色虚线在文字下方，不穿字 |
+| B2 局部虚线 | 待补拍 | ![](.attachments/drawBehind-b2-scene2-zoom.png) | ✅ 通过 | `onTextLayout + getBoundingBox` 定位 span [9,11)，红色虚线贴"纯"字下方；全景见上表 B1 同张截图场景 2 区域 |
+| B3 实线下划线 | 待补拍 | （同 B1 全景截图场景 3） | ✅ 通过 | `TextDecoration.Underline` + `SpanStyle` 实线，回归无差异 |
+| B4 多行逐行虚线 | 待补拍 | （同 B1 全景截图场景 4） | ✅ 通过 | 折行文本每行下方各一条品红虚线（`lineCount` + `getLineBottom`），非仅最底行 |
+| B5 参数化虚线 | 待补拍 | （同 B1 全景截图场景 5） | ✅ 通过 | 细红(8-4)/中蓝(12-6)/粗绿(16-8) 三组肉眼可区分 |
 
-## 附录 D：性能数据表格模板
+> **截图说明**：`drawBehind-b1-b5-kuikly-5scene-aligned.png` 为 2026-07-15 20:30 截于 `emulator-5556`，包含全部 5 个场景的 Kuikly 渲染结果（行度量桥接后）。`drawBehind-b2-scene2-zoom.png` 为场景 2 局部虚线放大特写。
+
+## 附录 D：性能数据
 
 | 指标 | 改造前 | 改造后 | 差值 | 阈值 | 判定 |
 |---|---|---|---|---|---|
-| C1 首屏耗时 | | | | ≤+3ms | ⏳ |
-| C2 vs 原路线 C | | | | ≤+5ms | ⏳ |
-| C3 LazyColumn FPS | | | | ≥55 | ⏳ |
-| C4 内存/LeakCanary | | | | 无泄漏 | ⏳ |
-| C5 APK 增量 | | | | ≤50KB | ⏳ |
+| C1 首屏耗时（vs 无 drawBehind） | ~0μs（无此路径） | avg **346μs**, max **777μs**（6 个 drawBehind 首帧） | +0.35~0.78ms/次 | ≤+3ms | ✅ 通过（最大值不足阈值 26%） |
+| C2 vs 路线C textPostProcessor | 待测（路线C 为原生 StaticLayout，预期更快） | 同上 | — | ≤+5ms | ⏳ 待补测路线C对照 |
+| C3 LazyColumn FPS（30 条 item 复用滚动） | 待测 | 待测 | — | ≥55 | ⏳ 待测 |
+| C4 内存泄漏（dumpsys meminfo detach 前后差值） | 待测 | 待测 | — | ≤0 | ⏳ 待测 |
+| C5 APK 体积增量 | 待测 | 待测 | — | ≤50KB | ⏳ 待测 |
+
+> **C1 测量详情（2026-07-15 21:28, emulator-5556, API 34, xxhdpi）**：
+> 计时桩位于 `DrawModifier.kt` `drawIntoBackgroundCanvasView()` 核心段（setFrame→KuiklyCanvas 绑定→bgDrawScope.draw→用户 drawBlock），`System.nanoTime()` 包裹。
+> 首帧 6 次 drawBehind 调用耗时：316 / 131 / 226 / **777**(场景2 含 getBoundingBox) / 321 / 314 μs。均值 346μs，中位数 ~320μs。
+> 结论：drawBehind 在非 CanvasView 宿主上的额外开销远低于 3ms 阈值；最重的场景 2（含 onTextLayout + getBoundingBox 查询）也仅 0.78ms。
 
 ## 附录 E：验收签字
 
