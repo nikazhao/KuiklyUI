@@ -123,6 +123,11 @@ OH_Drawing_TextDecoration ConvertToTextDecoration(const std::string &textDecorat
         return TEXT_DECORATION_UNDERLINE;
     }
 
+    if (textDecoration == "dashed") {
+        // dashed 由 KRRichTextView OnForegroundDraw 按字符区间手画，Typography 本身保持无装饰。
+        return TEXT_DECORATION_NONE;
+    }
+
     if (textDecoration == "line-through") {
         return TEXT_DECORATION_LINE_THROUGH;
     }

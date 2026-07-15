@@ -46,6 +46,7 @@ typedef NS_ENUM(NSInteger, KRBorderStyle) {
 typedef NS_ENUM(NSInteger, KRTextDecorationLineType) {
     KRTextDecorationLineTypeNone = 0,
     KRTextDecorationLineTypeUnderline,
+    KRTextDecorationLineTypeDashedUnderline,
     KRTextDecorationLineTypeStrikethrough,
     KRTextDecorationLineTypeUnderlineStrikethrough,
 };

@@ -39,6 +39,12 @@ class TextDecoration internal constructor(val mask: Int) {
         val Underline: TextDecoration = TextDecoration(0x1)
 
         /**
+         * Draws a dashed horizontal line below the text.
+         */
+        @Stable
+        val DashedUnderline: TextDecoration = TextDecoration(0x4)
+
+        /**
          * Draws a horizontal line over the text.
          *
          * @sample com.tencent.kuikly.compose.ui.text.samples.TextDecorationLineThroughSample
@@ -87,6 +93,9 @@ class TextDecoration internal constructor(val mask: Int) {
         val values: MutableList<String> = mutableListOf()
         if ((mask and Underline.mask) != 0) {
             values.add("Underline")
+        }
+        if ((mask and DashedUnderline.mask) != 0) {
+            values.add("DashedUnderline")
         }
         if ((mask and LineThrough.mask) != 0) {
             values.add("LineThrough")

@@ -658,8 +658,11 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
             std::wstring_convert<deletable_facet<std::codecvt<char16_t, char, std::mbstate_t>>, char16_t> conv16;
             std::u16string str16 = conv16.from_bytes(text);
             int codePointCount = str16.size();
-            // 虚线下划线：若本 span 携带 dashed 标记，记录其字符区间与绘制参数，供 view 绘制。
-            if (GetKRValue(kuikly::richtext::kInternalDashedUnderlineKey, spanMap, spanMap)->toDouble() != 0.0) {
+            // 虚线下划线：支持两条来源
+            // 1) PostProcessor("dashed") 生成的内部标记
+            // 2) RichText span 的 textDecoration = "dashed"
+            if (GetKRValue(kuikly::richtext::kInternalDashedUnderlineKey, spanMap, spanMap)->toDouble() != 0.0 ||
+                isDashedUnderline) {
                 KRDashedUnderlineRecord rec;
                 rec.start = charOffset;
                 rec.end = charOffset + codePointCount;
@@ -667,6 +670,12 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
                 rec.gap = static_cast<float>(GetKRValue(kuikly::richtext::kInternalDashedGapKey, spanMap, spanMap)->toDouble());
                 rec.color = static_cast<uint32_t>(GetKRValue(kuikly::richtext::kInternalDashedColorKey, spanMap, spanMap)->toDouble());
                 rec.thickness = static_cast<float>(GetKRValue(kuikly::richtext::kInternalDashedThickKey, spanMap, spanMap)->toDouble());
+                if (isDashedUnderline) {
+                    rec.dash = rec.dash > 0 ? rec.dash : 6.0f;
+                    rec.gap = rec.gap > 0 ? rec.gap : 4.0f;
+                    rec.color = color;
+                    rec.thickness = rec.thickness > 0 ? rec.thickness : 1.0f;
+                }
                 dashed_underline_records_.push_back(std::move(rec));
             }
             span_offsets_.emplace_back(std::tuple(spanIndex, charOffset, charOffset + codePointCount));

@@ -38,6 +38,7 @@ import android.text.style.LeadingMarginSpan
 import android.util.SizeF
 import android.view.ViewGroup
 import com.tencent.kuikly.core.render.android.IKuiklyRenderContext
+import com.tencent.kuikly.core.render.android.expand.component.text.KRDashedUnderlineSpan
 import com.tencent.kuikly.core.render.android.IKuiklyRenderContextWrapper
 import com.tencent.kuikly.core.render.android.adapter.KuiklyRenderAdapterManager
 import com.tencent.kuikly.core.render.android.adapter.TextPostProcessorInput
@@ -332,6 +333,7 @@ open class KRTextProps(private val kuiklyContext: IKuiklyRenderContext?) {
         const val FONT_STYLE_ITALIC = "italic"
 
         const val TEXT_DECORATION_UNDERLINE = "underline"
+        const val TEXT_DECORATION_DASHED = "dashed"
         const val TEXT_DECORATION_LINE_THROUGH = "line-through"
 
         const val TEXT_ALIGN_CENTER = "center"
@@ -679,6 +681,14 @@ class KRRichTextShadow : IKuiklyRenderShadowExport, IKuiklyRenderContextWrapper 
         textPaint.color = textProps.color
         textPaint.letterSpacing = kuiklyRenderContext.toPxF(textProps.letterSpacing) / max(textPaint.textSize, 1f)
         val simpleText = SpannableStringBuilder(textProps.text)
+        if (textProps.textDecoration == KRTextProps.TEXT_DECORATION_DASHED && simpleText.isNotEmpty()) {
+            simpleText.setSpan(
+                KRDashedUnderlineSpan(),
+                0,
+                simpleText.length,
+                Spannable.SPAN_INCLUSIVE_EXCLUSIVE
+            )
+        }
         if (textProps.lineHeight != KRTextProps.UNSET_LINE_HEIGHT) {
             simpleText.setSpan(
                 HRLineHeightSpan(textProps.lineHeight.toInt()),

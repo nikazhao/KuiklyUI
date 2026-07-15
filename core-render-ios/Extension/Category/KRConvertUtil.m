@@ -228,6 +228,9 @@ const NSString *lineargradientPrefix = @"linear-gradient(";
     if ([stringValue isEqualToString:@"underline"]) {
         return KRTextDecorationLineTypeUnderline;
     }
+    if ([stringValue isEqualToString:@"dashed"]) {
+        return KRTextDecorationLineTypeDashedUnderline;
+    }
     if ([stringValue isEqualToString:@"line-through"]) {
         return KRTextDecorationLineTypeStrikethrough;
     }

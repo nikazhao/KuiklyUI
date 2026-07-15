@@ -374,6 +374,11 @@ NSString *const kGradientInfoKeyGlobalRange = @"globalRange";
     if (attrs.textDecoration == KRTextDecorationLineTypeUnderline) {
         [attributedString addAttribute:NSUnderlineStyleAttributeName value:@(NSUnderlineStyleSingle) range:range];
     }
+    if (attrs.textDecoration == KRTextDecorationLineTypeDashedUnderline) {
+        [attributedString addAttribute:NSUnderlineStyleAttributeName
+                                 value:@(NSUnderlineStyleSingle | NSUnderlinePatternDash)
+                                 range:range];
+    }
     if (attrs.textDecoration == KRTextDecorationLineTypeStrikethrough) {
         [attributedString addAttribute:NSStrikethroughStyleAttributeName value:@(NSUnderlineStyleSingle) range:range];
     }

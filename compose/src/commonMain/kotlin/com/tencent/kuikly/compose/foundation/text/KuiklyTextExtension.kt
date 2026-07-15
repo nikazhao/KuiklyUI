@@ -249,12 +249,26 @@ internal fun TextAttr.applyTextIndent(textIndent: TextIndent?) {
 internal fun TextAttr.applyTextDecoration(decoration: TextDecoration?) {
     val value = when (decoration) {
         TextDecoration.Underline -> "underline"
+        TextDecoration.DashedUnderline -> "dashed"
         TextDecoration.LineThrough -> "line-through"
         else -> "none"
     }
-    
+
     if (value == "none" && getProp(TextConst.TEXT_DECORATION) == null) {
         return
+    }
+    setProp(TextConst.TEXT_DECORATION, value)
+}
+
+// 给 span 维度使用的入口：只有在显式指定了非空 TextDecoration 时才下发给原生层。
+// AnnotatedString 中相邻 span 可能一个带 dashed，一个不带；如果不带装饰的段也回写
+// "none"，会把前一段的 dashed/underline 状态覆盖掉。
+internal fun TextAttr.applyTextDecorationForSpan(decoration: TextDecoration) {
+    val value = when (decoration) {
+        TextDecoration.Underline -> "underline"
+        TextDecoration.DashedUnderline -> "dashed"
+        TextDecoration.LineThrough -> "line-through"
+        else -> return
     }
     setProp(TextConst.TEXT_DECORATION, value)
 }
@@ -453,7 +467,10 @@ internal fun TextSpan.applySpanStyle(spanStyle: SpanStyle, density: Density) {
     }
 
     // Apply text decoration
-    spanStyle.textDecoration?.let { applyTextDecoration(it) }
+    // 注：这里使用 `applyTextDecorationForSpan`：AnnotatedString 内某一段可能没有
+    // textDecoration，调用方应当只在"显式指定了装饰"时才下发给原生层，避免把
+    // 上一段的 dashed/underline 装饰被回写 "none" 覆盖。
+    spanStyle.textDecoration?.let { applyTextDecorationForSpan(it) }
 
     // Apply letter spacing
     if (spanStyle.letterSpacing.isSpecified) {

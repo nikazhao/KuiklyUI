@@ -40,6 +40,8 @@ import android.text.style.UnderlineSpan
 import android.text.style.UpdateAppearance
 import android.util.SizeF
 import com.tencent.kuikly.core.render.android.IKuiklyRenderContext
+import com.tencent.kuikly.core.render.android.adapter.KuiklyRenderAdapterManager
+import com.tencent.kuikly.core.render.android.adapter.TextPostProcessorInput
 import com.tencent.kuikly.core.render.android.const.KRCssConst
 import com.tencent.kuikly.core.render.android.css.decoration.BoxShadow
 import com.tencent.kuikly.core.render.android.css.drawable.KRCSSBackgroundDrawable
@@ -82,7 +84,8 @@ class KRRichTextBuilder(private val kuiklyContext: IKuiklyRenderContext?) {
                 spannedBuilder.isEmpty() || spannedBuilder[spannedBuilder.lastIndex] == '\n'
             val spanValue = spanValues.optJSONObject(index) ?: JSONObject()
             val spanProps = parseSpanProps(spanValue, textProps, isStart)
-            val spans = createSpans(spanProps, index, layoutSizeGetter)
+            val useTextPostProcessor = spanProps is TextSpanProps && shouldUseTextPostProcessor(spanProps)
+            val spans = createSpans(spanProps, index, layoutSizeGetter, useTextPostProcessor)
             if (spans.isNotEmpty()) {
                 if (spanProps is TextSpanProps && spanProps.adjustNewline) {
                     // 对齐iOS、鸿蒙端表现，非空行的换行符不撑开行高
@@ -92,17 +95,22 @@ class KRRichTextBuilder(private val kuiklyContext: IKuiklyRenderContext?) {
                         Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                     )
                 }
+                val renderText = if (spanProps is TextSpanProps) {
+                    createRenderedText(spanProps, useTextPostProcessor)
+                } else {
+                    spanProps.text
+                }
                 spannedBuilder.append(buildSpannedString {
                     // 记录 Span 对应的文字范围
                     spanTextRanges.add(
                         SpanTextRange(
                             index,
                             spannedBuilder.length,
-                            spannedBuilder.length + spanProps.text.length
+                            spannedBuilder.length + renderText.length
                         )
                     )
                     inSpans(spans) {
-                        append(spanProps.text)
+                        append(renderText)
                     }
                 })
 
@@ -148,18 +156,50 @@ class KRRichTextBuilder(private val kuiklyContext: IKuiklyRenderContext?) {
     private fun createSpans(
         spanProps: SpanProps,
         index: Int,
-        layoutSizeGetter: () -> SizeF
+        layoutSizeGetter: () -> SizeF,
+        useTextPostProcessor: Boolean = false
     ): List<Any> {
         val spans = mutableListOf<Any>()
         when (spanProps) {
             is TextSpanProps -> {
-                spans.addAll(createTextSpan(spanProps, index, layoutSizeGetter))
+                spans.addAll(createTextSpan(spanProps, index, layoutSizeGetter, useTextPostProcessor))
             }
             is PlaceholderSpanProps -> {
                 spans.add(KRPlaceholderSpan(spanProps))
             }
         }
         return spans
+    }
+
+    private fun shouldUseTextPostProcessor(spanProps: TextSpanProps): Boolean {
+        return resolveTextPostProcessor(spanProps).isNotEmpty() &&
+            KuiklyRenderAdapterManager.krTextPostProcessorAdapter != null
+    }
+
+    private fun createRenderedText(
+        spanProps: TextSpanProps,
+        useTextPostProcessor: Boolean
+    ): CharSequence {
+        if (!useTextPostProcessor) {
+            return spanProps.text
+        }
+        val processorName = resolveTextPostProcessor(spanProps)
+        val adapter = KuiklyRenderAdapterManager.krTextPostProcessorAdapter ?: return spanProps.text
+        return adapter.onTextPostProcess(
+            kuiklyContext,
+            TextPostProcessorInput(processorName, spanProps.text, spanProps.toTextProps(kuiklyContext))
+        ).text
+    }
+
+    private fun resolveTextPostProcessor(spanProps: TextSpanProps): String {
+        if (spanProps.textPostProcessor.isNotEmpty()) {
+            return spanProps.textPostProcessor
+        }
+        return if (spanProps.textDecoration == KRTextProps.TEXT_DECORATION_DASHED) {
+            KRTextProps.TEXT_DECORATION_DASHED
+        } else {
+            ""
+        }
     }
 
     /**
@@ -172,7 +212,8 @@ class KRRichTextBuilder(private val kuiklyContext: IKuiklyRenderContext?) {
     private fun createTextSpan(
         spanProps: TextSpanProps,
         index: Int,
-        layoutSizeGetter: () -> SizeF
+        layoutSizeGetter: () -> SizeF,
+        useTextPostProcessor: Boolean
     ): List<Any> {
         val textSpans = mutableListOf<Any>()
 
@@ -195,10 +236,14 @@ class KRRichTextBuilder(private val kuiklyContext: IKuiklyRenderContext?) {
         // 修饰相关
         textSpans.add(ForegroundColorSpan(spanProps.color))
         if (spanProps.textDecoration.isNotEmpty()) {
-            if (spanProps.textDecoration == KRTextProps.TEXT_DECORATION_LINE_THROUGH) {
-                textSpans.add(StrikethroughSpan())
-            } else {
-                textSpans.add(UnderlineSpan())
+            when (spanProps.textDecoration) {
+                KRTextProps.TEXT_DECORATION_LINE_THROUGH -> textSpans.add(StrikethroughSpan())
+                KRTextProps.TEXT_DECORATION_DASHED -> {
+                    if (!useTextPostProcessor) {
+                        textSpans.add(KRDashedUnderlineSpan())
+                    }
+                }
+                else -> textSpans.add(UnderlineSpan())
             }
         }
         if (spanProps.backgroundImage.isNotEmpty()) {
@@ -252,6 +297,7 @@ class TextSpanProps(
     val textDecoration: String
     val lineHeight: Float
     val backgroundImage: String
+    val textPostProcessor: String
     var textShadow: BoxShadow? = null
     var useDpFontSizeDim = false
 
@@ -298,9 +344,28 @@ class TextSpanProps(
             defaultProps.lineHeight
         }
         backgroundImage = spanValue.optString(KRTextProps.PROP_KEY_BACKGROUND_IMAGE, defaultProps.backgroundImage)
+        textPostProcessor = spanValue.optString(KRTextProps.PROP_KEY_TEXT_POST_PROCESSOR, "")
         val textShadowStr = spanValue.optString(KRTextProps.PROP_KEY_TEXT_SHADOW, "")
         textShadow = BoxShadow(textShadowStr, kuiklyContext)
         useDpFontSizeDim = spanValue.optInt(KRTextProps.PROP_KEY_TEXT_USE_DP_FONT_SIZE_DIM) == 1
+    }
+
+    fun toTextProps(kuiklyContext: IKuiklyRenderContext?): KRTextProps {
+        return KRTextProps(kuiklyContext).apply {
+            text = this@TextSpanProps.text
+            color = this@TextSpanProps.color
+            fontSize = this@TextSpanProps.fontSize
+            fontFamily = this@TextSpanProps.fontFamily
+            fontWeight = this@TextSpanProps.fontWeight
+            fontStyle = this@TextSpanProps.fontStyle
+            letterSpacing = this@TextSpanProps.letterSpacing
+            textDecoration = this@TextSpanProps.textDecoration
+            lineHeight = this@TextSpanProps.lineHeight
+            backgroundImage = this@TextSpanProps.backgroundImage
+            textShadow = this@TextSpanProps.textShadow
+            textPostProcessor = this@TextSpanProps.textPostProcessor
+            useDpFontSizeDim = this@TextSpanProps.useDpFontSizeDim
+        }
     }
 
 }
