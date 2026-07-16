@@ -230,7 +230,7 @@ internal class TextStringRichNode(
         val placeholderRects = mutableListOf<Rect>()
 
         val textView = (requireLayoutNode() as? KNode<RichTextView>)?.view
-        val pageDensity = textView!!.getPager().pagerDensity()
+        val pageDensity = textView?.getPager()?.pagerDensity() ?: requireDensity().density
         // 遍历所有文本片段,处理占位符
         textView?.getViewAttr()?.getSpans()?.forEachIndexed { index, span ->
             if (span !is PlaceholderSpan) return@forEachIndexed

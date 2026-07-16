@@ -417,6 +417,8 @@ internal class DrawBackgroundModifier(...) : Modifier.Node(), DrawModifierNode, 
 | D5 | `Modifier.drawBehind {}` 挂在**当前不支持**的组件（如 Image） | 继续走原 `KLog.e` 兜底日志，不崩溃，不影响该组件正常显示 |
 | D6 | `Text` 的宽度为 0 或 height 为 0 | 不崩溃；不画（`drawBehind` 不触发）无副作用 |
 
+> **兜底代码落地（2026-07-16）**：D2/D3 的显式降级由 `KuiklyCanvas.drawLine` 补 `if (intervals.isEmpty() || intervals.all { it == 0f }) setLineDash(emptyList())` 实现——空/全零区间降级画实线（不崩溃、行为确定），并顺带加固两处空指针（`TextStringRichNode.genTextLayoutResult` 的 `textView!!`、`KuiklyCanvas.view` setter 的 `value.renderView!!`）。D1/D4/D5/D6 由既有 `null`/空分支覆盖。D 类已无未兜底项。
+
 ---
 
 ## E. 生命周期
@@ -425,7 +427,7 @@ internal class DrawBackgroundModifier(...) : Modifier.Node(), DrawModifierNode, 
 |---|---|---|
 | E1 | Text 从 LazyColumn 复用 | 上一条 Text 的虚线不残留到下一条 |
 | E2 | Text detach（父组件销毁） | 挂载的 backgroundCanvas 被同时销毁；无 View 泄漏（`dumpsys meminfo` 前后一致） |
-| E3 | `drawBehind { ... }` 内闭包重组（读到的 state 变化） | 虚线实时重画（`invalidateDraw` 生效） |
+| E3 | `drawBehind { ... }` 内闭包重组（读到的 state 变化） | 虚线实时重画（`invalidateDraw` 生效） | ✅ 满足（2026-07-16：`DrawBackgroundModifier.draw` 非 CanvasView 分支已补 `observeReads` 包裹，与 CanvasView 分支一致） |
 | E4 | Text 内容动态变长（触发换行） | 虚线随行数变化，无遗留 |
 
 ---
@@ -450,7 +452,7 @@ internal class DrawBackgroundModifier(...) : Modifier.Node(), DrawModifierNode, 
 | G3 | 现有 `Text(textDecoration = TextDecoration.Underline)` | 与改造前一致 |
 | G4 | 现有 `AnnotatedString + SpanStyle(textDecoration=Underline)` | 与改造前一致 |
 | G5 | 现有 `Canvas { onDraw = { drawLine(...) } }` 组件 | 与改造前一致（本方案不改 core，只加通道） |
-| G6 | 现有单元测试全绿 | `./gradlew :compose:testDebugUnitTest` 全部通过 |
+| G6 | 现有单元测试全绿 | `./gradlew :compose:testDebugUnitTest` 全部通过 | ⚠️ 真空通过（2026-07-16 核实：`compose` 模块**无 test 源集**，该 task 为 `NO-SOURCE`，实际执行 0 个用例 → 不提供回归覆盖。G6 仅作"编译测试源集不报错"信号，非功能回归保证；功能回归以 C4 + D1-D6 手动点测为准 |
 
 ---
 
@@ -513,13 +515,18 @@ internal class DrawBackgroundModifier(...) : Modifier.Node(), DrawModifierNode, 
 | C1 首屏耗时（vs 无 drawBehind） | ~0μs（无此路径） | avg **346μs**, max **777μs**（6 个 drawBehind 首帧） | +0.35~0.78ms/次 | ≤+3ms | ✅ 通过（最大值不足阈值 26%） |
 | C2 vs 路线C textPostProcessor | 待测（路线C 为原生 StaticLayout，预期更快） | 同上 | — | ≤+5ms | ⏳ 待补测路线C对照 |
 | C3 LazyColumn FPS（30 条 item 复用滚动） | 待测 | 待测 | — | ≥55 | ⏳ 待测 |
-| C4 内存泄漏（dumpsys meminfo detach 前后差值） | 待测 | 待测 | — | ≤0 | ⏳ 待测 |
+| C4 内存泄漏（dumpsys meminfo detach/复用 差值） | 5 轮「打开→滚动回收→返回」Views 恒 133(开)/126(关)，PSS 无增长 | 0（无单调增长） | ≤0 | ✅ 通过（emulator-5556, 2026-07-16） |
 | C5 APK 体积增量 | 待测 | 待测 | — | ≤50KB | ⏳ 待测 |
 
 > **C1 测量详情（2026-07-15 21:28, emulator-5556, API 34, xxhdpi）**：
 > 计时桩位于 `DrawModifier.kt` `drawIntoBackgroundCanvasView()` 核心段（setFrame→KuiklyCanvas 绑定→bgDrawScope.draw→用户 drawBlock），`System.nanoTime()` 包裹。
 > 首帧 6 次 drawBehind 调用耗时：316 / 131 / 226 / **777**(场景2 含 getBoundingBox) / 321 / 314 μs。均值 346μs，中位数 ~320μs。
 > 结论：drawBehind 在非 CanvasView 宿主上的额外开销远低于 3ms 阈值；最重的场景 2（含 onTextLayout + getBoundingBox 查询）也仅 0.78ms。
+
+> **C4 测量详情（2026-07-16 10:2x, emulator-5556, Pixel_6 AVD, API 34）**：
+> 临时 `DashedStress` 页面（LazyColumn 100 条含 drawBehind 虚线 Text）做 5 轮「打开→滚动回收→返回」循环，`adb shell dumpsys meminfo com.tencent.kuikly.android.demo` 抓 Views / Activities / TOTAL PSS。
+> 结果：每轮「打开」Views 恒定 133、「返回」恒定 126、滚动后 143–144，5 轮**无任何单调递增**；PSS 在 97–111MB 间波动、无增长。
+> 结论：backgroundCanvas 在 `onDetach` / LazyColumn 复用回收时被正确移除，**无 View 泄漏、无内存泄漏**，满足 C4（≤0 增长）与 E1/E2 验收。
 
 ## 附录 E：验收签字
 

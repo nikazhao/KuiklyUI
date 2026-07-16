@@ -148,7 +148,14 @@ internal class DrawBackgroundModifier(
             ensureBackgroundCanvasView(view)
             // 用 DrawScope.size（= 宿主完整布局尺寸，含多行）而非 renderView.currentFrame
             //（后者对 RichTextView 只返一行高）
-            drawIntoBackgroundCanvasView(view, size)
+            // 与 CanvasView 分支一致，用 observeReads 包裹，使 draw 闭包内读取的
+            // snapshot state 变化时能触发重绘（否则仅依赖重组，E3 完备性不足）
+            requireOwner().snapshotObserver.observeReads(
+                this@DrawBackgroundModifier,
+                DrawModifierNode::invalidateDraw
+            ) {
+                drawIntoBackgroundCanvasView(view, size)
+            }
         } else {
             KLog.e("Kuikly.Compose", "drawBehind expect CanvasView, but got $view")
         }

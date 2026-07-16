@@ -75,10 +75,15 @@ internal class KuiklyCanvas : Canvas {
     override var view: DeclarativeBaseView<*, *>? = null
         set(value) {
             if (value is CanvasView) {
-                context = CanvasContext(value.renderView!!, value.pagerId, value.nativeRef)
-                densityValue = value.getPager().pagerDensity()
-                value.renderView?.callMethod("reset", "")
-                strokeCap = StrokeCap.Butt
+                val renderView = value.renderView
+                if (renderView != null) {
+                    context = CanvasContext(renderView, value.pagerId, value.nativeRef)
+                    densityValue = value.getPager().pagerDensity()
+                    renderView.callMethod("reset", "")
+                    strokeCap = StrokeCap.Butt
+                } else {
+                    context = null
+                }
             } else {
                 context = null
             }
@@ -160,7 +165,13 @@ internal class KuiklyCanvas : Canvas {
             // dash 参数下沉：px → dp/pt 换算后透传给 CanvasContext.setLineDash
             val effect = paint.pathEffect
             if (effect is DashPathEffect) {
-                setLineDash(effect.intervals.map { it / densityValue }.toList())
+                val intervals = effect.intervals
+                // D2/D3 兜底：空数组或全零区间属非法输入，降级画实线而非透传未定义行为
+                if (intervals.isEmpty() || intervals.all { it == 0f }) {
+                    setLineDash(emptyList())
+                } else {
+                    setLineDash(intervals.map { it / densityValue }.toList())
+                }
             } else {
                 setLineDash(emptyList())  // 显式清空，防止上一帧残留
             }
