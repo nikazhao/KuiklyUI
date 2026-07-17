@@ -534,3 +534,25 @@ internal class DrawBackgroundModifier(...) : Modifier.Node(), DrawModifierNode, 
 |---|---|---|---|
 | 开发者 | 用户（实习生） | | |
 | 评审人 | | | |
+
+---
+
+## 附录 F：2026-07-17 决策更新（官方 API 源码核实）
+
+> **更新口径**：本节日期 2026-07-17，覆盖/更新正文 §1.2、§5.3、§7.3 中"保留路线 C 作为交付路径"的口径。路线 C 代码**暂不删除**（用户 2026-07-17 决定），但**不再作为"与官方对齐"的交付内容**。
+
+### F.1 核实结论
+- 文本虚线"与官方 Compose 对齐"的**唯一正确做法**是 `Modifier.drawBehind { drawLine(..., pathEffect = PathEffect.dashPathEffect(...)) }` —— 这正是 `-pr` 分支（`feat/kuikly-compose-drawbehind-pathEffect-pr`）交付的内容。
+- **官方 Compose 根本不存在"虚线（dash）文本装饰 API"**。官方 `TextDecoration` 仅有 `None(0x0) / Underline(0x1) / LineThrough(0x2)`，没有任何虚线下划线变体。
+- 因此 `TextDecoration.DashedUnderline`、`SpanStyle(textDecoration = DashedUnderline)`、`KRDashedUnderlineSpan`、`Modifier.textPostProcessor("dashed")` 这套"路线 C"属于**我们自己在 Kuikly 里造的扩展 API**，官方无对应物。
+
+### F.2 核实证据（源码实锤，无需重查）
+1. **官方对照工程** `/Users/zhaozining/CodeBuddy/20260615095947/DashedLineVerify/app/src/main/java/com/example/dashedlineverify/MainActivity.kt`（纯 `androidx.compose.*`）：5 个虚线场景**全部**用 `drawBehind { drawLine(pathEffect = PathEffect.dashPathEffect(...)) }`；场景 3 用官方自带 `TextDecoration.Underline` 做对照；整份文件**搜不到 `DashedUnderline`**。
+2. **官方 `TextDecoration`** 仅 `None / Underline / LineThrough`（mask `0x0 / 0x1 / 0x2`），**无 `0x4`**。
+3. **`val DashedUnderline: TextDecoration = TextDecoration(0x4)` 仅定义于本分支**（`feat/kuikly-compose-drawBehind-pathEffect`）的 `compose/.../ui/text/style/TextDecoration.kt:45`，且在官方仓 `/Users/zhaozining/code/LearnCompose` 全仓搜不到 —— **是我们自己加的自造 API**。
+4. **交付分支 `-pr`** 的 `TextDecoration.kt` 搜 `DashedUnderline` = 0 命中，已无自造 API；其 `DashedUnderlineDemo.kt` 是官方 `MainActivity.kt` 的 1:1 移植（仅 `import androidx → com.tencent.kuikly`），5 场景全走 `drawBehind + PathEffect`，场景 3 用官方 `TextDecoration.Underline`。
+
+### F.3 决策
+- **交付内容**：只交付 `-pr` 分支（`drawBehind + PathEffect`），与官方 1:1 对齐。该分支已多轮 CR（🔴 High = 0）。
+- **路线 C（DashedUnderline / KRDashedUnderlineSpan / textPostProcessor("dashed")）**：因官方无对应 API，按"官方没有就不做"原则**不做、不作为对齐交付**。相关代码暂留本分支（用户决定先不删），仅作存档。
+- **待办**：`-pr` 分支待用户点头后 push 建外网 review（按仓库铁律，push 需用户确认）。
